@@ -5,18 +5,29 @@ const regd_users = express.Router();
 
 let users = [];
 
-const isValid = (username)=>{ //returns boolean
+const isValid = (username) => {
     return users.some(user => user.username === username);
 }
 
-const authenticatedUser = (username,password)=>{ //returns boolean
-return users.some(user => user.username === username && user.password === password);
+const authenticatedUser = (username, password) => {
+    return users.some(user => user.username === username && user.password === password);
 }
 
-//only registered users can login
-regd_users.post("/login", (req,res) => {
+// Middleware to authenticate the token and set req.user
+function authenticateToken(req, res, next) {
+    const token = req.session.token; // Or get it from the Authorization header: req.headers['authorization']?.split(' ')[1];
+    if (!token) return res.status(403).json({ message: "Token is missing." });
+
+    jwt.verify(token, "secretKey", (err, user) => {
+        if (err) return res.status(403).json({ message: "Invalid token." });
+        req.user = user; // Set the decoded user information to req.user
+        next();
+    });
+}
+
+// Login route
+regd_users.post("/login", (req, res) => {
     const { username, password } = req.body;
-    console.log(username, password);
 
     if (!username || !password) {
         return res.status(400).json({ message: "Username and password required." });
@@ -31,8 +42,8 @@ regd_users.post("/login", (req,res) => {
     }
 });
 
-// Add a book review
-regd_users.put("/auth/review/:isbn", (req, res) => {
+// Add or update a book review
+regd_users.put("/auth/review/:isbn", authenticateToken, (req, res) => {
     const { isbn } = req.params;
     const { review } = req.body;
     const username = req.user.username; // Get username from the decoded token
@@ -42,6 +53,25 @@ regd_users.put("/auth/review/:isbn", (req, res) => {
         return res.status(200).json({ message: "Review added successfully!" });
     } else {
         return res.status(404).json({ message: "Book not found." });
+    }
+});
+
+// Delete a book review
+regd_users.delete("/auth/review/:isbn", authenticateToken, (req, res) => {
+    const isbn = req.params.isbn;
+    const username = req.user.username; // Get username from the decoded token
+
+    if (books[isbn]) {
+        let reviews = books[isbn].reviews;
+
+        if (reviews[username]) {
+            delete reviews[username];
+            return res.status(200).json({ message: `Review for book with ISBN ${isbn} deleted.` });
+        } else {
+            return res.status(404).json({ message: `Review not found for the user ${username}.` });
+        }
+    } else {
+        return res.status(404).json({ message: `Book with ISBN ${isbn} not found.` });
     }
 });
 
